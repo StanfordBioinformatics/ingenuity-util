@@ -1,0 +1,6 @@
+{
+	"api_key_id": "insert-api-key-id-here",
+	"api_key_secret": "insert-api-key-secret-here",
+	"activation_code": "insert-activation-code-here", 
+	"shared_emails": ["email1@email1.com", "email2@email2.com"]
+}
