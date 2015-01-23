@@ -1,4 +1,4 @@
-#!/srv/gs1/software/python/3.2.3/bin/python3.2
+#!/srv/gs1/software/python/3.4/bin/python3.4
 import random
 import argparse
 import time
