@@ -12,12 +12,13 @@ from io import StringIO
 import os
 
 def parse_arguments():
-	parser = argparse.ArgumentParser(description='Upload a VCF file to Ingenuity. Assumes API key, API secret, activation code, and emails to share with are stored in conf.json.')
-	parser.add_argument('-c', dest='config_file', type=str, help='configuration file in JSON format')
-	parser.add_argument('-n', dest='sample_name', type=str, help='sample name')
-	parser.add_argument('-i', dest='vcf_file', type=str, help='input VCF file to upload, accepts .vcf or .vcf.gz')
-	args = parser.parse_args()
-	return args
+        parser = argparse.ArgumentParser(description='Upload a VCF file to Ingenuity. Assumes API key, API secret, activation code, and users to share with are stored in conf.json.')
+        parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format', default='conf.json')
+        parser.add_argument('sample_name', type=str, help='sample name')
+        parser.add_argument('-i', '--vcf_file', type=str, help='input VCF file to upload, accepts .vcf or .vcf.gz')
+        parser.add_argument('-t', '--test', action="store_true", help='create metadata files only')
+        args = parser.parse_args()
+        return args
 
 def create_study_file(study_filename, Display_Name, Description, Subject_ID, Gender, Age, Ethnicity, Phenotype):
 	pass
@@ -54,7 +55,8 @@ def parse_excel(filename, samplename):
             if col0[i].value == samplename:
                 index = i
                 break
-        assert(index != None)
+        if index == None:
+            return '', samplename
         col1 = status_sheet.col(1)
         subject_id = col1[index].value
         # Find description from subject ID
@@ -65,23 +67,40 @@ def parse_excel(filename, samplename):
             if col0[i].value == subject_id:
                 index = i
                 break
-        assert(index != None)
+        if index == None:
+            return '', subject_id
         col5 = patients_sheet.col(5)
         assert(col5[0].value == 'Patient details')
         description = col5[index].value
         return description, subject_id
     
-def create_investigation_file(emails, samplename, i_file, s_a_file):
-	fp = open(i_file, 'w')
-	fp.write('Study Identifier\t'+samplename+'\n')
-	fp.write('Study Title\t'+samplename+'\n')
-	fp.write('Study File Name\t'+os.path.basename(s_a_file)+'\n')
-	fp.write('Study Assay File Name\t'+os.path.basename(s_a_file)+'\n')
-	fp.write('Study Person Email')
-	for email in emails:
-		fp.write('\t'+email)
-	fp.write('\n')
-	fp.close()
+def create_investigation_file(users, samplename, i_file, s_a_file):
+        fp = open(i_file, 'w')
+        fp.write('Study Identifier\t'+samplename+'\n')
+        fp.write('Study Title\t'+samplename+'\n')
+        fp.write('Study File Name\t'+os.path.basename(s_a_file)+'\n')
+        fp.write('Study Assay File Name\t'+os.path.basename(s_a_file)+'\n')
+        fp.write('Study Person Email')
+        for user in users:
+                fp.write('\t'+user['email'])
+        fp.write('\n')
+        fp.write('Study Person First Name')
+        for user in users:
+                fp.write('\t'+user['fname'])
+        fp.write('\n')
+        fp.write('Study Person Last Name')
+        for user in users:
+                fp.write('\t'+user['lname'])
+        fp.write('\n')
+        fp.write('Study Person Affiliation')
+        for user in users:
+                fp.write('\t'+user['affil'])
+        fp.write('\n')
+        fp.write('Study Person Roles')
+        for user in users:
+                fp.write('\t'+user['role'])
+        fp.write('\n')
+        fp.close()
 
 def create_study_assay_file(sample_name, vcf_file, description, subject_name, code, s_a_file):
 	vcf_filename = os.path.basename(vcf_file)
@@ -138,57 +157,48 @@ def check_status(status_url, token):
 	response_dict = json.loads(body.decode())
 	return response_dict
 
-def main():
-        args = parse_arguments()
-        temp = '/tmp/'
-        # Random filenames for temporary files
-        suffix = str(int(random.random()*100000000))
-        i_file = temp+'i_'+suffix+'.txt'
-        s_a_file = temp+'s_a_'+suffix+'.txt'
-        r_file = temp+'r_'+suffix+'.txt'
-        z_file = temp+suffix+'.zip'
-        vcf_file = args.vcf_file	
-        conf = load_json(args.config_file)
-        emails = conf['shared_emails']
-        code = conf['activation_code']
-        xlsx_file = conf['xlsx_file']
-        description, subject_name = parse_excel(xlsx_file, args.sample_name)
-        create_investigation_file(emails, args.sample_name, i_file, s_a_file)
-        print('Created temporary file '+i_file)
-        create_study_assay_file(args.sample_name, vcf_file, description, subject_name, code, s_a_file)
-        print('Created temporary file '+s_a_file)
-        create_request_file(args.sample_name, r_file)
-        print('Created temporary file '+r_file)
-        create_package(args.vcf_file, s_a_file, i_file, r_file, z_file)
-        print('Created temporary file '+z_file)
-        token = get_access_token(conf['api_key_id'], conf['api_key_secret'])
-        print('Uploading package...')
-        response_dict = upload_package(token, z_file)
+def print_file(filename):
+	with open(filename) as f:
+		print(f.read())	
 
-# 	status_url = response_dict['status-url']
-# 	print('{}% complete, {}, {}'.format(response_dict['percentage-complete'], response_dict['status'], response_dict['stage']))
-# 	while response_dict['status'] != 'DONE' and response_dict['status'] != 'FAILED':
-# 		time.sleep(5) 
-# 		response_dict = check_status(status_url,token)
-# 		if 'error' in response_dict.keys:
-# 			if response_dict['error'] == 'invalid access token':
-# 				token = get_access_token(conf['api_key_id'], conf['api_key_secret'])
-# 			else:
-# 				print(response_dict)
-# 		print(response_dict)
-# 		print('{}% complete, {}, {}'.format(response_dict['percentage-complete'], response_dict['status'], response_dict['stage']))
-# 	if response_dict['status'] == 'DONE':
-# 		print('Sample viewable at '+response_dict['results-url'])
-# 	else:
-# 		print(response_dict)
-        os.remove(i_file)
-        print('Removed temp file '+i_file)
-        os.remove(s_a_file)
-        print('Removed temp file '+s_a_file)
-        os.remove(r_file)
-        print('Removed temp file '+r_file)
-        os.remove(z_file)	
-        print('Removed temp file '+z_file)
+def main():
+	args = parse_arguments()
+	temp = '/tmp/'
+	# Random filenames for temporary files
+	suffix = str(int(random.random()*100000000))
+	i_file = temp+'i_'+suffix+'.txt'
+	s_a_file = temp+'s_a_'+suffix+'.txt'
+	r_file = temp+'r_'+suffix+'.txt'
+	z_file = temp+suffix+'.zip'
+	vcf_file = args.vcf_file	
+	conf = load_json(args.config_file)
+	shared_users = conf['shared_users']
+	code = conf['activation_code']
+	xlsx_file = conf['xlsx_file']
+	description, subject_name = parse_excel(xlsx_file, args.sample_name)
+	create_investigation_file(shared_users, args.sample_name, i_file, s_a_file)
+	print('Created temporary file '+i_file+':')
+	print_file(i_file)
+	create_study_assay_file(args.sample_name, vcf_file, description, subject_name, code, s_a_file)
+	print('Created temporary file '+s_a_file+':')
+	print_file(s_a_file)
+	create_request_file(args.sample_name, r_file)
+	print('Created temporary file '+r_file+':')
+	print_file(r_file)
+	if not args.test:
+		create_package(args.vcf_file, s_a_file, i_file, r_file, z_file)
+		print('Created temporary file '+z_file)
+		token = get_access_token(conf['api_key_id'], conf['api_key_secret'])
+		print('Uploading package...')
+		response_dict = upload_package(token, z_file)
+		os.remove(z_file)	
+		print('Removed temp file '+z_file)
+	os.remove(i_file)
+	print('Removed temp file '+i_file)
+	os.remove(s_a_file)
+	print('Removed temp file '+s_a_file)
+	os.remove(r_file)
+	print('Removed temp file '+r_file)
 
 if __name__ == '__main__':
 	main()
