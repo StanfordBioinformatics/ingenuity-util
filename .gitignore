@@ -2,3 +2,5 @@ conf.json
 conf-nosharing-noactivation.json
 *.xls
 *.xlsx
+ingutil
+*.log

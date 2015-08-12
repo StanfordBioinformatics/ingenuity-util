@@ -10,16 +10,27 @@ from urllib.parse import urlencode
 from io import BytesIO
 from io import StringIO
 import os
+import logging
 
 def parse_arguments():
-        parser = argparse.ArgumentParser(description='Upload a VCF file to Ingenuity. Assumes API key, API secret, activation code, and users to share with are stored in conf.json.')
-        parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format', default='conf.json')
-        parser.add_argument('sample_name', type=str, help='sample name')
-        parser.add_argument('-i', '--vcf_file', type=str, help='input VCF file to upload, accepts .vcf or .vcf.gz')
-        parser.add_argument('-t', '--test', action="store_true", help='create metadata files only')
-        parser.add_argument('-d', '--display_name', type=str, help='Barcode and Display Name in Ingenuity (defaults to sample name)')
-        args = parser.parse_args()
-        return args
+    parser = argparse.ArgumentParser(description='Upload a VCF file to Ingenuity or check the status of an upload.') 
+    subparsers = parser.add_subparsers()
+
+    upload_parser = subparsers.add_parser('upload', help='Upload a VCF file to Ingenuity. API key, API secret, activation code, and shared users are read from a JSON file.')
+    upload_parser.add_argument('vcf_file', type=str, help='input VCF file to upload, accepts .vcf or .vcf.gz')
+    upload_parser.add_argument('sample_name', type=str, help='sample name (e.g. case0017)')
+    upload_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default='conf-nosharing-noactivation.json')
+    upload_parser.add_argument('-d', '--display_name', type=str, help='Barcode and Display Name in Ingenuity (default: same as sample name)')
+    upload_parser.add_argument('-t', '--test', action="store_true", help='create metadata files only')
+    upload_parser.set_defaults(func=upload_subcommand)
+        
+    status_parser = subparsers.add_parser('status', help='Checks the status of an upload.')
+    status_parser.add_argument('status_url', type=str, help='the status URL to check')
+    status_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default='conf-nosharing-noactivation.json')
+    status_parser.set_defaults(func=status_subcommand)
+
+    args = parser.parse_args()
+    return args
 
 def create_study_file(study_filename, Display_Name, Description, Subject_ID, Gender, Age, Ethnicity, Phenotype):
     pass
@@ -142,11 +153,11 @@ def upload_package(token, z_file):
     decoded_body = body.decode()
     try:    
         response_dict = json.loads(decoded_body)
-        print('Upload complete. Response from server:')
-        print(json.dumps(response_dict,indent='\t'))
+        logger.info('Upload complete. Response from server:')
+        logger.info(json.dumps(response_dict,indent='\t'))
     except ValueError:
-        print('Could not parse server response as a JSON object. Response follows:')
-        print(decoded_body)
+        logger.info('Could not parse server response as a JSON object. Response follows:')
+        logger.info(decoded_body)
 
 def check_status(status_url, token):
     buffer = BytesIO()
@@ -160,12 +171,29 @@ def check_status(status_url, token):
     response_dict = json.loads(body.decode())
     return response_dict
 
-def print_file(filename):
+def print_file(filename, logger):
     with open(filename) as f:
-        print(f.read())    
+        logger.info(f.read())    
 
-def main():
-    args = parse_arguments()
+def setup_loggers():
+    logger = logging.getLogger('ingutil')
+    logger.setLevel(logging.DEBUG)
+    # create file handler which logs even debug messages
+    fh = logging.FileHandler('ingutil.log')
+    fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    fh.setFormatter(formatter)
+    # add the handlers to logger
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+    return logger
+
+def upload_subcommand(args, logger):
     temp = '/tmp/'
     # Random filenames for temporary files
     suffix = str(int(random.random()*100000000))
@@ -183,28 +211,37 @@ def main():
         display_name = args.display_name
     description, subject_name = parse_excel(xlsx_file, args.sample_name)
     create_investigation_file(shared_users, display_name, i_file, s_a_file)
-    print('Created temporary file '+i_file+':')
-    print_file(i_file)
+    logger.info('Created temporary file '+i_file+':')
+    print_file(i_file, logger)
     create_study_assay_file(display_name, vcf_file, description, subject_name, code, s_a_file)
-    print('Created temporary file '+s_a_file+':')
-    print_file(s_a_file)
+    logger.info('Created temporary file '+s_a_file+':')
+    print_file(s_a_file, logger)
     create_request_file(display_name, r_file)
-    print('Created temporary file '+r_file+':')
-    print_file(r_file)
+    logger.info('Created temporary file '+r_file+':')
+    print_file(r_file, logger)
     if not args.test:
         create_package(args.vcf_file, s_a_file, i_file, r_file, z_file)
-        print('Created temporary file '+z_file)
+        logger.info('Created temporary file '+z_file)
         token = get_access_token(conf['api_key_id'], conf['api_key_secret'])
-        print('Uploading package...')
+        logger.info('Uploading package...')
         response_dict = upload_package(token, z_file)
         os.remove(z_file)    
-        print('Removed temp file '+z_file)
+        logger.info('Removed temp file '+z_file)
     os.remove(i_file)
-    print('Removed temp file '+i_file)
+    logger.info('Removed temp file '+i_file)
     os.remove(s_a_file)
-    print('Removed temp file '+s_a_file)
+    logger.info('Removed temp file '+s_a_file)
     os.remove(r_file)
-    print('Removed temp file '+r_file)
+    logger.info('Removed temp file '+r_file)
+
+def status_subcommand(args, logger):
+    conf = load_json(args.config_file)
+    token = get_access_token(conf['api_key_id'], conf['api_key_secret'])
+    response_dict = check_status(args.status_url, token)
+    print('Response from server:')
+    print(json.dumps(response_dict,indent='\t'))
 
 if __name__ == '__main__':
-    main()
+    logger = setup_loggers()
+    args = parse_arguments()
+    args.func(args, logger)
