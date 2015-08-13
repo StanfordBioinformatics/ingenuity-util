@@ -18,7 +18,7 @@ def parse_arguments():
 
     upload_parser = subparsers.add_parser('upload', help='Upload a VCF file to Ingenuity. API key, API secret, activation code, and shared users are read from a JSON file.')
     upload_parser.add_argument('vcf_file', type=str, help='input VCF file to upload, accepts .vcf or .vcf.gz')
-    upload_parser.add_argument('sample_name', type=str, help='sample name (e.g. case0017)')
+    upload_parser.add_argument('sample_name', type=str, help='sample name (e.g. case0017), used to find sample description from Excel file')
     upload_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default='conf-nosharing-noactivation.json')
     upload_parser.add_argument('-d', '--display_name', type=str, help='Barcode and Display Name in Ingenuity (default: same as sample name)')
     upload_parser.add_argument('-t', '--test', action="store_true", help='create metadata files only')
@@ -26,7 +26,7 @@ def parse_arguments():
         
     status_parser = subparsers.add_parser('status', help='Checks the status of an upload.')
     status_parser.add_argument('status_url', type=str, help='the status URL to check')
-    status_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default='conf-nosharing-noactivation.json')
+    status_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default=os.path.join(os.path.dirname(__file__), 'conf-nosharing-noactivation.json'))
     status_parser.set_defaults(func=status_subcommand)
 
     args = parser.parse_args()
@@ -179,7 +179,7 @@ def setup_loggers():
     logger = logging.getLogger('ingutil')
     logger.setLevel(logging.DEBUG)
     # create file handler which logs even debug messages
-    fh = logging.FileHandler('ingutil.log')
+    fh = logging.FileHandler(os.path.join(os.path.dirname(__file__),'ingutil.log'))
     fh.setLevel(logging.DEBUG)
     # create console handler with a higher log level
     ch = logging.StreamHandler()
@@ -205,7 +205,7 @@ def upload_subcommand(args, logger):
     conf = load_json(args.config_file)
     shared_users = conf['shared_users']
     code = conf['activation_code']
-    xlsx_file = conf['xlsx_file']
+    xlsx_file = os.path.join(os.path.dirname(args.config_file), conf['xlsx_file'])
     display_name = args.sample_name
     if args.display_name != None:
         display_name = args.display_name
