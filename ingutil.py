@@ -18,15 +18,16 @@ def parse_arguments():
 
     upload_parser = subparsers.add_parser('upload', help='Upload a VCF file to Ingenuity. API key, API secret, activation code, and shared users are read from a JSON file.')
     upload_parser.add_argument('vcf_file', type=str, help='input VCF file to upload, accepts .vcf or .vcf.gz')
-    upload_parser.add_argument('sample_name', type=str, help='sample name (e.g. case0017), used to find sample description from Excel file')
-    upload_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default='conf-nosharing-noactivation.json')
+    upload_parser.add_argument('sample_name', type=str, help='sample name (e.g. case0017)')
+    upload_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'conf-nosharing-noactivation.json'))
     upload_parser.add_argument('-d', '--display_name', type=str, help='Barcode and Display Name in Ingenuity (default: same as sample name)')
+    upload_parser.add_argument('-n', '--no_description', action="store_true", help='do not try to read subject name and description from Excel file and just leave blank')
     upload_parser.add_argument('-t', '--test', action="store_true", help='create metadata files only')
     upload_parser.set_defaults(func=upload_subcommand)
         
     status_parser = subparsers.add_parser('status', help='Checks the status of an upload.')
     status_parser.add_argument('status_url', type=str, help='the status URL to check')
-    status_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default=os.path.join(os.path.dirname(__file__), 'conf-nosharing-noactivation.json'))
+    status_parser.add_argument('-c', '--config_file', type=str, help='configuration file in JSON format (default: conf-nosharing-noactivation.json)', default=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'conf-nosharing-noactivation.json'))
     status_parser.set_defaults(func=status_subcommand)
 
     args = parser.parse_args()
@@ -205,11 +206,14 @@ def upload_subcommand(args, logger):
     conf = load_json(args.config_file)
     shared_users = conf['shared_users']
     code = conf['activation_code']
-    xlsx_file = os.path.join(os.path.dirname(args.config_file), conf['xlsx_file'])
     display_name = args.sample_name
     if args.display_name != None:
         display_name = args.display_name
-    description, subject_name = parse_excel(xlsx_file, args.sample_name)
+    if not args.no_description and 'xlsx_file' in conf:
+        xlsx_file = os.path.join(os.path.dirname(args.config_file), conf['xlsx_file'])
+        description, subject_name = parse_excel(xlsx_file, args.sample_name)
+    else:
+        description, subject_name = '',''
     create_investigation_file(shared_users, display_name, i_file, s_a_file)
     logger.info('Created temporary file '+i_file+':')
     print_file(i_file, logger)
@@ -220,6 +224,7 @@ def upload_subcommand(args, logger):
     logger.info('Created temporary file '+r_file+':')
     print_file(r_file, logger)
     if not args.test:
+        logger.info('Creating package '+z_file+'...')
         create_package(args.vcf_file, s_a_file, i_file, r_file, z_file)
         logger.info('Created temporary file '+z_file)
         token = get_access_token(conf['api_key_id'], conf['api_key_secret'])
